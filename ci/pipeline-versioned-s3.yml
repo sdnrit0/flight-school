@@ -1,0 +1,96 @@
+resources:
+- name: flight-school
+  type: git
+  source:
+    uri: https://github.com/sdnrit0/flight-school
+    branch: master
+- name: version
+  type: semver
+  source:
+    bucket: sdnrit0-flight-school-pipeline-artifacts
+    key: current-version
+    access_key_id: {{s3-access-key-id}}
+    secret_access_key: {{s3-secret-access-key}}
+    region_name: {{s3-region-name}}
+    initial_version: 1.0.0
+- name: my-product-rc
+  type: s3
+  source:
+    bucket: sdnrit0-flight-school-pipeline-artifacts
+    regexp: my-product-(.*).tgz
+    access_key_id: {{s3-access-key-id}}
+    secret_access_key: {{s3-secret-access-key}}
+    region_name: {{s3-region-name}}
+- name: my-product-final
+  type: s3
+  source:
+    bucket: sdnrit0-flight-school
+    regexp: my-product-(.*).tgz
+    access_key_id: {{s3-access-key-id}}
+    secret_access_key: {{s3-secret-access-key}}
+    region_name: {{s3-region-name}}
+
+jobs:
+- name: unit
+  plan:
+  - get: flight-school
+    trigger: true
+  - task: tests
+    file: flight-school/build.yml
+- name: build-rc
+  serial_groups: [version]
+  plan:
+  - get: flight-school
+    passed: [unit]
+    trigger: true
+  - get: version
+    params: {pre: rc}
+  - task: build-artifact
+    file: flight-school/ci/build-artifact.yml
+  - put: my-product-rc
+    params: {file: built-artifact/my-product-*.tgz}
+  - put: version
+    params: {file: version/number}
+- name: integration
+  serial: true
+  plan:
+  - get: my-product-rc
+    trigger: true
+    passed: [build-rc]
+  - get: flight-school
+    passed: [build-rc]
+  - task: integration
+    file: flight-school/ci/integration.yml
+- name: shipit
+  serial_groups: [version]
+  plan:
+  - get: my-product-rc
+    passed: [integration]
+  - get: flight-school
+    passed: [integration]
+  - get: version
+    params: {bump: final}
+  - task: promote-to-final
+    file: flight-school/ci/promote-to-final.yml
+  - put: my-product-final
+    params: {file: built-product/my-product-*.tgz}
+  - put: version
+    params: {file: version/number}
+- name: major
+  serial_groups: [version]
+  plan:
+  - put: version
+    params: {bump: major, pre: rc}
+- name: minor
+  serial_groups: [version]
+  plan:
+  - put: version
+    params: {bump: minor, pre: rc}
+- name: patch
+  serial_groups: [version]
+  plan:
+  - get: version
+    passed: [shipit]
+    trigger: true
+  - put: version
+    params: {bump: patch, pre: rc}
