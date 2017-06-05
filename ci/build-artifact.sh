@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e -x
 
-tar zcf built-artifact/my-product-${1}.tgz flight-school
+version=`cat ${1}`
+tar zcf built-artifact/my-product-${version}.tgz flight-school
 
